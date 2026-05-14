@@ -36,3 +36,6 @@ htmlcov/
 
 # Runtime logs
 logs/
+
+# Copilot local context
+.copilot.md
