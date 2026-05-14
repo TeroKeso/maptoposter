@@ -79,6 +79,14 @@ python create_map_poster.py --city <city> --country <country> [options]
 | **OPTIONAL:** `--all-themes` | | Generate posters for all available themes | |
 | **OPTIONAL:** `--width` | `-W` | Image width in inches | 12 (max: 20) |
 | **OPTIONAL:** `--height` | `-H` | Image height in inches | 16 (max: 20) |
+| **OPTIONAL:** `--format` | `-f` | Output format (`png`, `svg`, `pdf`) | png |
+| **OPTIONAL:** `--laser-cut` | | Laser-cut mode (single stroke, no fills/gradients/text) | off |
+| **OPTIONAL:** `--laser-color` | | Stroke color for laser paths | `#FF0000` |
+| **OPTIONAL:** `--laser-water-color` | | Water outline color for laser paths | `#0000FF` |
+| **OPTIONAL:** `--laser-linewidth` | | Stroke width in points for laser paths | 0.1 |
+| **OPTIONAL:** `--laser-road-hierarchy` | | Road-type width hierarchy in laser mode (motorways thicker) | off |
+| **OPTIONAL:** `--laser-double-lines` | | Parallel double-lines for major roads in laser mode | off |
+| **OPTIONAL:** `--laser-double-line-offset` | | Offset distance in meters for each major-road parallel line | 8.0 |
 
 ### Multilingual Support - i18n
 
@@ -191,7 +199,26 @@ python create_map_poster.py --list-themes
 
 # Generate posters for every theme
 python create_map_poster.py -c "Tokyo" -C "Japan" --all-themes
+
+# Laser-cut ready vector with laser theme (recommended)
+python create_map_poster.py -c "Amsterdam" -C "Netherlands" --theme laser --laser-cut -f svg --laser-color "#FF0000" --laser-water-color "#0000FF" --laser-linewidth 0.1 --laser-road-hierarchy
+
+# Laser double-line mode for major roads
+python create_map_poster.py -c "Amsterdam" -C "Netherlands" --theme laser --laser-cut -f svg --laser-double-lines --laser-double-line-offset 1
 ```
+
+### Laser Cutting Tips
+
+- Use `-f svg` (or `-f pdf`) for vector paths.
+- Use `--theme laser` when you want output names like `{city}_laser_...`.
+- Use `--laser-cut` to disable gradients, text, and filled polygons while keeping roads and water as vector paths.
+- Use `--laser-color` for roads and `--laser-water-color` for lakes/water outlines.
+- Use `--laser-road-hierarchy` to keep thicker primary roads and thinner residential roads in laser output.
+- Use `--laser-double-lines` to draw true parallel offsets for major roads (not just thicker single strokes).
+- Tune `--laser-double-line-offset` (meters) based on city scale, recommended start: `1`.
+- Keep one stroke color per operation; most laser software maps colors to cut/engrave settings.
+- Start with `--laser-linewidth 0.1`, then map to hairline in your cutter software if required.
+- To reduce complexity and cut time, lower `-d` (distance), e.g. `4000` to `8000`.
 
 ### Distance Guide
 
@@ -203,7 +230,7 @@ python create_map_poster.py -c "Tokyo" -C "Japan" --all-themes
 
 ## Themes
 
-17 themes available in `themes/` directory:
+18 themes available in `themes/` directory:
 
 | Theme | Style |
 |-------|-------|
@@ -224,13 +251,14 @@ python create_map_poster.py -c "Tokyo" -C "Japan" --all-themes
 | `autumn` | Seasonal burnt oranges and reds |
 | `copper_patina` | Oxidized copper aesthetic |
 | `monochrome_blue` | Single blue color family |
+| `laser` | Laser-cut focused red line palette |
 
 ## Output
 
 Posters are saved to `posters/` directory with format:
 
 ```text
-{city}_{theme}_{YYYYMMDD_HHMMSS}.png
+{city}_{theme}_{YYYYMMDD_HHMMSS}.{png|svg|pdf}
 ```
 
 ## Adding Custom Themes
