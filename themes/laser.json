@@ -1,0 +1,15 @@
+{
+  "name": "Laser",
+  "description": "Laser-cut focused theme with red-accent line palette",
+  "bg": "#FFFFFF",
+  "text": "#000000",
+  "gradient_color": "#FFFFFF",
+  "water": "#F2F2F2",
+  "parks": "#FAFAFA",
+  "road_motorway": "#FF0000",
+  "road_primary": "#E00000",
+  "road_secondary": "#C00000",
+  "road_tertiary": "#A00000",
+  "road_residential": "#800000",
+  "road_default": "#A00000"
+}

@@ -12,6 +12,7 @@ import asyncio
 import json
 import os
 import pickle
+import shlex
 import sys
 import time
 from datetime import datetime
@@ -27,7 +28,7 @@ from geopy.geocoders import Nominatim
 from lat_lon_parser import parse
 from matplotlib.font_manager import FontProperties
 from networkx import MultiDiGraph
-from shapely.geometry import Point
+from shapely.geometry import GeometryCollection, LineString, MultiLineString, Point
 from tqdm import tqdm
 
 from font_management import load_fonts
@@ -44,10 +45,27 @@ CACHE_DIR.mkdir(exist_ok=True)
 THEMES_DIR = "themes"
 FONTS_DIR = "fonts"
 POSTERS_DIR = "posters"
+LOGS_DIR = Path("logs")
+COMMAND_LOG_FILE = LOGS_DIR / "generation.log"
 
 FILE_ENCODING = "utf-8"
 
 FONTS = load_fonts()
+
+
+def log_generation_command(command: str, output_file: str) -> None:
+    """Append one generation record with command and output filename."""
+    try:
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "command": command,
+            "output_file": output_file,
+        }
+        with open(COMMAND_LOG_FILE, "a", encoding=FILE_ENCODING) as f:
+            f.write(json.dumps(entry, ensure_ascii=True) + "\n")
+    except OSError as e:
+        print(f"⚠ Could not write generation log: {e}")
 
 
 def _cache_path(key: str) -> str:
@@ -316,6 +334,83 @@ def get_edge_widths_by_type(g):
     return edge_widths
 
 
+def normalize_highway(highway):
+    """Normalize OSM highway tag values to a single string."""
+    if isinstance(highway, list):
+        highway = highway[0] if highway else "unclassified"
+    return highway or "unclassified"
+
+
+def get_laser_width_for_highway(highway, base_width=0.1):
+    """Return laser stroke width for one normalized highway type."""
+    if highway in ["motorway", "motorway_link"]:
+        return base_width * 3.0
+    if highway in ["trunk", "trunk_link", "primary", "primary_link"]:
+        return base_width * 2.5
+    if highway in ["secondary", "secondary_link"]:
+        return base_width * 2.0
+    if highway in ["tertiary", "tertiary_link"]:
+        return base_width * 1.5
+    return base_width
+
+
+def get_laser_edge_widths_by_type(g, base_width=0.1):
+    """
+    Assign laser stroke widths by road type, preserving visual hierarchy.
+
+    base_width is used for residential/default roads. Larger roads are scaled up.
+    """
+    edge_widths = []
+
+    for _u, _v, data in g.edges(data=True):
+        highway = normalize_highway(data.get('highway', 'unclassified'))
+        width = get_laser_width_for_highway(highway, base_width)
+
+        edge_widths.append(width)
+
+    return edge_widths
+
+
+def _extract_line_geometries(geometry):
+    """Extract LineString parts from line-like shapely geometries."""
+    if geometry is None or geometry.is_empty:
+        return []
+
+    if isinstance(geometry, LineString):
+        return [geometry]
+
+    if isinstance(geometry, MultiLineString):
+        return [line for line in geometry.geoms if not line.is_empty]
+
+    if isinstance(geometry, GeometryCollection):
+        parts = []
+        for geom in geometry.geoms:
+            parts.extend(_extract_line_geometries(geom))
+        return parts
+
+    return []
+
+
+def _build_parallel_offsets(geometry, offset_distance):
+    """Build left and right offset line geometries from a base line geometry."""
+    lines = _extract_line_geometries(geometry)
+    if not lines:
+        return []
+
+    offsets = []
+    for line in lines:
+        try:
+            left = line.parallel_offset(offset_distance, "left", join_style=2)
+            right = line.parallel_offset(offset_distance, "right", join_style=2)
+            offsets.extend(_extract_line_geometries(left))
+            offsets.extend(_extract_line_geometries(right))
+        except Exception:
+            # Keep generation resilient if a specific geometry cannot be offset.
+            continue
+
+    return offsets
+
+
 def get_coordinates(city, country):
     """
     Fetches coordinates for a given city and country using geopy.
@@ -495,7 +590,11 @@ def create_poster(
     fonts=None,
     laser_cut=False,
     laser_color="#FF0000",
+    laser_water_color="#0000FF",
     laser_linewidth=0.1,
+    laser_road_hierarchy=False,
+    laser_double_lines=False,
+    laser_double_line_offset=8.0,
 ):
     """
     Generate a complete map poster with roads, water, parks, and typography.
@@ -577,7 +676,7 @@ def create_poster(
 
     # 3. Plot Layers
     # Layer 1: Polygons (filter to only plot polygon/multipolygon geometries, not points)
-    if not laser_cut and water is not None and not water.empty:
+    if water is not None and not water.empty:
         # Filter to only polygon/multipolygon geometries to avoid point features showing as dots
         water_polys = water[water.geometry.type.isin(["Polygon", "MultiPolygon"])]
         if not water_polys.empty:
@@ -586,7 +685,18 @@ def create_poster(
                 water_polys = ox.projection.project_gdf(water_polys)
             except Exception:
                 water_polys = water_polys.to_crs(g_proj.graph['crs'])
-            water_polys.plot(ax=ax, facecolor=THEME['water'], edgecolor='none', zorder=0.5)
+
+            if laser_cut:
+                # Laser mode: draw water as vector outlines in a separate color layer.
+                water_polys.plot(
+                    ax=ax,
+                    facecolor="none",
+                    edgecolor=laser_water_color,
+                    linewidth=laser_linewidth,
+                    zorder=1,
+                )
+            else:
+                water_polys.plot(ax=ax, facecolor=THEME['water'], edgecolor='none', zorder=0.5)
 
     if not laser_cut and parks is not None and not parks.empty:
         # Filter to only polygon/multipolygon geometries to avoid point features showing as dots
@@ -602,22 +712,87 @@ def create_poster(
     print("Applying road hierarchy colors...")
     if laser_cut:
         edge_colors = [laser_color] * g_proj.number_of_edges()
-        edge_widths = [laser_linewidth] * g_proj.number_of_edges()
+        if laser_road_hierarchy:
+            edge_widths = get_laser_edge_widths_by_type(g_proj, laser_linewidth)
+        else:
+            edge_widths = [laser_linewidth] * g_proj.number_of_edges()
     else:
         edge_colors = get_edge_colors_by_type(g_proj)
         edge_widths = get_edge_widths_by_type(g_proj)
 
     # Determine cropping limits to maintain the poster aspect ratio
     crop_xlim, crop_ylim = get_crop_limits(g_proj, point, fig, compensated_dist)
-    # Plot the projected graph and then apply the cropped limits
-    ox.plot_graph(
-        g_proj, ax=ax, bgcolor=THEME['bg'] if not laser_cut else "none",
-        node_size=0,
-        edge_color=edge_colors,
-        edge_linewidth=edge_widths,
-        show=False,
-        close=False,
-    )
+
+    if laser_cut and laser_double_lines:
+        edges = ox.graph_to_gdfs(g_proj, nodes=False, fill_edge_geometry=True)
+        if not edges.empty:
+            edges = edges.copy()
+            edges["highway_norm"] = edges["highway"].apply(normalize_highway)
+            major_types = {
+                "motorway",
+                "motorway_link",
+                "trunk",
+                "trunk_link",
+                "primary",
+                "primary_link",
+                "secondary",
+                "secondary_link",
+            }
+            major_edges = edges[edges["highway_norm"].isin(major_types)].copy()
+            minor_edges = edges[~edges["highway_norm"].isin(major_types)].copy()
+
+            if not minor_edges.empty:
+                if laser_road_hierarchy:
+                    minor_edges["plot_width"] = minor_edges["highway_norm"].apply(
+                        lambda h: get_laser_width_for_highway(h, laser_linewidth)
+                    )
+                else:
+                    minor_edges["plot_width"] = laser_linewidth
+
+                for width in sorted(minor_edges["plot_width"].unique()):
+                    segment = minor_edges[minor_edges["plot_width"] == width]
+                    segment.plot(
+                        ax=ax,
+                        color=laser_color,
+                        linewidth=float(width),
+                        zorder=2.9,
+                    )
+
+            if not major_edges.empty:
+                if laser_road_hierarchy:
+                    major_edges["plot_width"] = major_edges["highway_norm"].apply(
+                        lambda h: get_laser_width_for_highway(h, laser_linewidth)
+                    )
+                else:
+                    major_edges["plot_width"] = laser_linewidth
+
+                offset_lines_by_width = dict[float, list]()
+                for row in major_edges.itertuples(index=False):
+                    width = float(getattr(row, "plot_width"))
+                    geometry = getattr(row, "geometry")
+                    offsets = _build_parallel_offsets(geometry, laser_double_line_offset)
+                    if not offsets:
+                        continue
+                    offset_lines_by_width.setdefault(width, []).extend(offsets)
+
+                for width, geoms in offset_lines_by_width.items():
+                    GeoDataFrame(geometry=geoms, crs=edges.crs).plot(
+                        ax=ax,
+                        color=laser_color,
+                        linewidth=width,
+                        zorder=3.1,
+                    )
+    else:
+        # Plot the projected graph and then apply the cropped limits
+        ox.plot_graph(
+            g_proj, ax=ax, bgcolor=THEME['bg'] if not laser_cut else "none",
+            node_size=0,
+            edge_color=edge_colors,
+            edge_linewidth=edge_widths,
+            show=False,
+            close=False,
+        )
+
     ax.set_aspect("equal", adjustable="box")
     ax.set_xlim(crop_xlim)
     ax.set_ylim(crop_ylim)
@@ -826,7 +1001,10 @@ Examples:
   python create_map_poster.py -c "Budapest" -C "Hungary" -t copper_patina -d 8000  # Danube split
 
     # Laser-cut ready vector output (single-color strokes)
-    python create_map_poster.py -c "Amsterdam" -C "Netherlands" --laser-cut -f svg --laser-color "#FF0000" --laser-linewidth 0.1
+    python create_map_poster.py -c "Amsterdam" -C "Netherlands" --laser-cut -f svg --laser-color "#FF0000" --laser-water-color "#0000FF" --laser-linewidth 0.1 --laser-road-hierarchy
+
+    # Laser double-line mode for major roads
+    python create_map_poster.py -c "Amsterdam" -C "Netherlands" --laser-cut -f svg --laser-double-lines --laser-double-line-offset 8
 
   # List themes
   python create_map_poster.py --list-themes
@@ -841,7 +1019,11 @@ Options:
     --format, -f      Output format: png, svg, pdf (default: png)
     --laser-cut       Laser-cut friendly mode: single-stroke vectors, no fills/gradients/text
     --laser-color     Stroke color for laser paths (default: #FF0000)
+    --laser-water-color Water outline color for laser paths (default: #0000FF)
     --laser-linewidth Stroke width in points for laser paths (default: 0.1)
+    --laser-road-hierarchy Use road-type-based stroke widths in laser mode
+    --laser-double-lines Use parallel double-lines for major roads in laser mode
+    --laser-double-line-offset Offset distance (meters) for each parallel major-road line (default: 8)
   --list-themes     List all available themes
 
 Distance guide:
@@ -990,10 +1172,32 @@ Examples:
         help="Hex color for laser cut paths (default: #FF0000)",
     )
     parser.add_argument(
+        "--laser-water-color",
+        type=str,
+        default="#0000FF",
+        help="Hex color for water outlines in laser mode (default: #0000FF)",
+    )
+    parser.add_argument(
         "--laser-linewidth",
         type=float,
         default=0.1,
         help="Stroke width in points for laser paths (default: 0.1)",
+    )
+    parser.add_argument(
+        "--laser-road-hierarchy",
+        action="store_true",
+        help="Use road-type-based stroke widths in laser mode",
+    )
+    parser.add_argument(
+        "--laser-double-lines",
+        action="store_true",
+        help="Use parallel double-lines for major roads in laser mode",
+    )
+    parser.add_argument(
+        "--laser-double-line-offset",
+        type=float,
+        default=8.0,
+        help="Offset distance (meters) for each parallel major-road line (default: 8)",
     )
 
     args = parser.parse_args()
@@ -1034,6 +1238,10 @@ Examples:
         print("Error: --laser-linewidth must be greater than 0.")
         sys.exit(1)
 
+    if args.laser_double_line_offset <= 0:
+        print("Error: --laser-double-line-offset must be greater than 0.")
+        sys.exit(1)
+
     available_themes = get_available_themes()
     if not available_themes:
         print("No themes found in 'themes/' directory.")
@@ -1061,6 +1269,8 @@ Examples:
 
     # Get coordinates and generate poster
     try:
+        cli_command = shlex.join([sys.argv[0], *sys.argv[1:]])
+
         if args.latitude and args.longitude:
             lat = parse(args.latitude)
             lon = parse(args.longitude)
@@ -1087,8 +1297,13 @@ Examples:
                 fonts=custom_fonts,
                 laser_cut=args.laser_cut,
                 laser_color=args.laser_color,
+                laser_water_color=args.laser_water_color,
                 laser_linewidth=args.laser_linewidth,
+                laser_road_hierarchy=args.laser_road_hierarchy,
+                laser_double_lines=args.laser_double_lines,
+                laser_double_line_offset=args.laser_double_line_offset,
             )
+            log_generation_command(cli_command, output_file)
 
         print("\n" + "=" * 50)
         print("✓ Poster generation complete!")
