@@ -493,6 +493,9 @@ def create_poster(
     display_city=None,
     display_country=None,
     fonts=None,
+    laser_cut=False,
+    laser_color="#FF0000",
+    laser_linewidth=0.1,
 ):
     """
     Generate a complete map poster with roads, water, parks, and typography.
@@ -561,8 +564,12 @@ def create_poster(
 
     # 2. Setup Plot
     print("Rendering map...")
-    fig, ax = plt.subplots(figsize=(width, height), facecolor=THEME["bg"])
-    ax.set_facecolor(THEME["bg"])
+    if laser_cut:
+        fig, ax = plt.subplots(figsize=(width, height), facecolor="white")
+        ax.set_facecolor("none")
+    else:
+        fig, ax = plt.subplots(figsize=(width, height), facecolor=THEME["bg"])
+        ax.set_facecolor(THEME["bg"])
     ax.set_position((0.0, 0.0, 1.0, 1.0))
 
     # Project graph to a metric CRS so distances and aspect are linear (meters)
@@ -570,7 +577,7 @@ def create_poster(
 
     # 3. Plot Layers
     # Layer 1: Polygons (filter to only plot polygon/multipolygon geometries, not points)
-    if water is not None and not water.empty:
+    if not laser_cut and water is not None and not water.empty:
         # Filter to only polygon/multipolygon geometries to avoid point features showing as dots
         water_polys = water[water.geometry.type.isin(["Polygon", "MultiPolygon"])]
         if not water_polys.empty:
@@ -581,7 +588,7 @@ def create_poster(
                 water_polys = water_polys.to_crs(g_proj.graph['crs'])
             water_polys.plot(ax=ax, facecolor=THEME['water'], edgecolor='none', zorder=0.5)
 
-    if parks is not None and not parks.empty:
+    if not laser_cut and parks is not None and not parks.empty:
         # Filter to only polygon/multipolygon geometries to avoid point features showing as dots
         parks_polys = parks[parks.geometry.type.isin(["Polygon", "MultiPolygon"])]
         if not parks_polys.empty:
@@ -593,14 +600,18 @@ def create_poster(
             parks_polys.plot(ax=ax, facecolor=THEME['parks'], edgecolor='none', zorder=0.8)
     # Layer 2: Roads with hierarchy coloring
     print("Applying road hierarchy colors...")
-    edge_colors = get_edge_colors_by_type(g_proj)
-    edge_widths = get_edge_widths_by_type(g_proj)
+    if laser_cut:
+        edge_colors = [laser_color] * g_proj.number_of_edges()
+        edge_widths = [laser_linewidth] * g_proj.number_of_edges()
+    else:
+        edge_colors = get_edge_colors_by_type(g_proj)
+        edge_widths = get_edge_widths_by_type(g_proj)
 
     # Determine cropping limits to maintain the poster aspect ratio
     crop_xlim, crop_ylim = get_crop_limits(g_proj, point, fig, compensated_dist)
     # Plot the projected graph and then apply the cropped limits
     ox.plot_graph(
-        g_proj, ax=ax, bgcolor=THEME['bg'],
+        g_proj, ax=ax, bgcolor=THEME['bg'] if not laser_cut else "none",
         node_size=0,
         edge_color=edge_colors,
         edge_linewidth=edge_widths,
@@ -612,8 +623,9 @@ def create_poster(
     ax.set_ylim(crop_ylim)
 
     # Layer 3: Gradients (Top and Bottom)
-    create_gradient_fade(ax, THEME['gradient_color'], location='bottom', zorder=10)
-    create_gradient_fade(ax, THEME['gradient_color'], location='top', zorder=10)
+    if not laser_cut:
+        create_gradient_fade(ax, THEME['gradient_color'], location='bottom', zorder=10)
+        create_gradient_fade(ax, THEME['gradient_color'], location='top', zorder=10)
 
     # Calculate scale factor based on smaller dimension (reference 12 inches)
     # This ensures text scales properly for both portrait and landscape orientations
@@ -680,87 +692,91 @@ def create_poster(
             family="monospace", weight="bold", size=adjusted_font_size
         )
 
-    # --- BOTTOM TEXT ---
-    ax.text(
-        0.5,
-        0.14,
-        spaced_city,
-        transform=ax.transAxes,
-        color=THEME["text"],
-        ha="center",
-        fontproperties=font_main_adjusted,
-        zorder=11,
-    )
+    if not laser_cut:
+        # --- BOTTOM TEXT ---
+        ax.text(
+            0.5,
+            0.14,
+            spaced_city,
+            transform=ax.transAxes,
+            color=THEME["text"],
+            ha="center",
+            fontproperties=font_main_adjusted,
+            zorder=11,
+        )
 
-    ax.text(
-        0.5,
-        0.10,
-        display_country.upper(),
-        transform=ax.transAxes,
-        color=THEME["text"],
-        ha="center",
-        fontproperties=font_sub,
-        zorder=11,
-    )
+        ax.text(
+            0.5,
+            0.10,
+            display_country.upper(),
+            transform=ax.transAxes,
+            color=THEME["text"],
+            ha="center",
+            fontproperties=font_sub,
+            zorder=11,
+        )
 
-    lat, lon = point
-    coords = (
-        f"{lat:.4f}° N / {lon:.4f}° E"
-        if lat >= 0
-        else f"{abs(lat):.4f}° S / {lon:.4f}° E"
-    )
-    if lon < 0:
-        coords = coords.replace("E", "W")
+        lat, lon = point
+        coords = (
+            f"{lat:.4f}° N / {lon:.4f}° E"
+            if lat >= 0
+            else f"{abs(lat):.4f}° S / {lon:.4f}° E"
+        )
+        if lon < 0:
+            coords = coords.replace("E", "W")
 
-    ax.text(
-        0.5,
-        0.07,
-        coords,
-        transform=ax.transAxes,
-        color=THEME["text"],
-        alpha=0.7,
-        ha="center",
-        fontproperties=font_coords,
-        zorder=11,
-    )
+        ax.text(
+            0.5,
+            0.07,
+            coords,
+            transform=ax.transAxes,
+            color=THEME["text"],
+            alpha=0.7,
+            ha="center",
+            fontproperties=font_coords,
+            zorder=11,
+        )
 
-    ax.plot(
-        [0.4, 0.6],
-        [0.125, 0.125],
-        transform=ax.transAxes,
-        color=THEME["text"],
-        linewidth=1 * scale_factor,
-        zorder=11,
-    )
+        ax.plot(
+            [0.4, 0.6],
+            [0.125, 0.125],
+            transform=ax.transAxes,
+            color=THEME["text"],
+            linewidth=1 * scale_factor,
+            zorder=11,
+        )
 
-    # --- ATTRIBUTION (bottom right) ---
-    if FONTS:
-        font_attr = FontProperties(fname=FONTS["light"], size=8)
-    else:
-        font_attr = FontProperties(family="monospace", size=8)
+        # --- ATTRIBUTION (bottom right) ---
+        if FONTS:
+            font_attr = FontProperties(fname=FONTS["light"], size=8)
+        else:
+            font_attr = FontProperties(family="monospace", size=8)
 
-    ax.text(
-        0.98,
-        0.02,
-        "© OpenStreetMap contributors",
-        transform=ax.transAxes,
-        color=THEME["text"],
-        alpha=0.5,
-        ha="right",
-        va="bottom",
-        fontproperties=font_attr,
-        zorder=11,
-    )
+        ax.text(
+            0.98,
+            0.02,
+            "© OpenStreetMap contributors",
+            transform=ax.transAxes,
+            color=THEME["text"],
+            alpha=0.5,
+            ha="right",
+            va="bottom",
+            fontproperties=font_attr,
+            zorder=11,
+        )
 
     # 5. Save
     print(f"Saving to {output_file}...")
 
     fmt = output_format.lower()
     save_kwargs = dict(
-        facecolor=THEME["bg"],
+        facecolor=THEME["bg"] if not laser_cut else "none",
         bbox_inches="tight",
-        pad_inches=0.05,
+        pad_inches=0.05 if not laser_cut else 0,
     )
+
+    if laser_cut:
+        save_kwargs["transparent"] = True
 
     # DPI matters mainly for raster formats
     if fmt == "png":
@@ -809,6 +825,9 @@ Examples:
   python create_map_poster.py -c "London" -C "UK" -t noir -d 15000              # Thames curves
   python create_map_poster.py -c "Budapest" -C "Hungary" -t copper_patina -d 8000  # Danube split
 
+    # Laser-cut ready vector output (single-color strokes)
+    python create_map_poster.py -c "Amsterdam" -C "Netherlands" --laser-cut -f svg --laser-color "#FF0000" --laser-linewidth 0.1
+
   # List themes
   python create_map_poster.py --list-themes
 
@@ -819,6 +838,10 @@ Options:
   --theme, -t       Theme name (default: terracotta)
   --all-themes      Generate posters for all themes
   --distance, -d    Map radius in meters (default: 18000)
+    --format, -f      Output format: png, svg, pdf (default: png)
+    --laser-cut       Laser-cut friendly mode: single-stroke vectors, no fills/gradients/text
+    --laser-color     Stroke color for laser paths (default: #FF0000)
+    --laser-linewidth Stroke width in points for laser paths (default: 0.1)
   --list-themes     List all available themes
 
 Distance guide:
@@ -955,6 +978,23 @@ Examples:
         choices=["png", "svg", "pdf"],
         help="Output format for the poster (default: png)",
     )
+    parser.add_argument(
+        "--laser-cut",
+        action="store_true",
+        help="Generate laser-cut friendly vector output (single stroke, no gradients/text/fills)",
+    )
+    parser.add_argument(
+        "--laser-color",
+        type=str,
+        default="#FF0000",
+        help="Hex color for laser cut paths (default: #FF0000)",
+    )
+    parser.add_argument(
+        "--laser-linewidth",
+        type=float,
+        default=0.1,
+        help="Stroke width in points for laser paths (default: 0.1)",
+    )
 
     args = parser.parse_args()
 
@@ -985,6 +1025,14 @@ Examples:
             f"⚠ Height {args.height} exceeds the maximum allowed limit of 20. It's enforced as max limit 20."
         )
         args.height = 20.0
+
+    if args.laser_cut and args.format == "png":
+        print("⚠ --laser-cut works best with vector output; switching format from png to svg.")
+        args.format = "svg"
+
+    if args.laser_linewidth <= 0:
+        print("Error: --laser-linewidth must be greater than 0.")
+        sys.exit(1)
 
     available_themes = get_available_themes()
     if not available_themes:
@@ -1037,6 +1085,9 @@ Examples:
                 display_city=args.display_city,
                 display_country=args.display_country,
                 fonts=custom_fonts,
+                laser_cut=args.laser_cut,
+                laser_color=args.laser_color,
+                laser_linewidth=args.laser_linewidth,
             )
 
         print("\n" + "=" * 50)
