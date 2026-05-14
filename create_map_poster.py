@@ -666,6 +666,7 @@ def create_poster(
     if laser_cut:
         fig, ax = plt.subplots(figsize=(width, height), facecolor="white")
         ax.set_facecolor("none")
+        ax.axis("off")  # Remove frame, ticks and coordinate labels for laser output
     else:
         fig, ax = plt.subplots(figsize=(width, height), facecolor=THEME["bg"])
         ax.set_facecolor(THEME["bg"])
