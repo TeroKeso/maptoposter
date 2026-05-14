@@ -33,6 +33,12 @@ test_venv/
 htmlcov/
 .coverage
 .pytest_cache/
-
-# Runtime logs
 logs/
+
+# Devcontainer
+devcontainer-lock.json
+# Generated posters
+posters/
+
+# Local Overpass database
+overpass_db/*

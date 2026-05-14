@@ -1,0 +1,15 @@
+# Initialize the database once before starting the service:
+# docker compose run --rm --no-deps --entrypoint /opt/overpass/bin/import_osm_data.sh overpass --diff-url=https://download.geofabrik.de/europe/finland-updates/ --data-source=https://download.geofabrik.de/europe/finland-latest.osm.pbf --meta=no
+services:
+  overpass:
+    image: b1tw153/overpass-api:latest
+    ports:
+      - "12345:8080"
+    environment:
+      OVERPASS_REPLICATE_ID: auto
+      OVERPASS_DIFF_URL: https://download.geofabrik.de/europe/finland-updates/
+      OVERPASS_META_MODE: "no"
+      OVERPASS_AREAS: "yes"
+    volumes:
+      - ./overpass_db:/opt/overpass/db
+    restart: unless-stopped

@@ -2,23 +2,23 @@
 
 Generate beautiful, minimalist map posters for any city in the world.
 
-<img src="posters/singapore_neon_cyberpunk_20260118_153328.png" width="250">
-<img src="posters/dubai_midnight_blue_20260118_140807.png" width="250">
+<img src="readme-images/singapore_neon_cyberpunk_20260118_153328.png" width="250">
+<img src="readme-images/dubai_midnight_blue_20260118_140807.png" width="250">
 
 ## Examples
 
 | Country      | City           | Theme           | Poster |
 |:------------:|:--------------:|:---------------:|:------:|
-| USA          | San Francisco  | sunset          | <img src="posters/san_francisco_sunset_20260118_144726.png" width="250"> |
-| Spain        | Barcelona      | warm_beige      | <img src="posters/barcelona_warm_beige_20260118_140048.png" width="250"> |
-| Italy        | Venice         | blueprint       | <img src="posters/venice_blueprint_20260118_140505.png" width="250"> |
-| Japan        | Tokyo          | japanese_ink    | <img src="posters/tokyo_japanese_ink_20260118_142446.png" width="250"> |
-| India        | Mumbai         | contrast_zones  | <img src="posters/mumbai_contrast_zones_20260118_145843.png" width="250"> |
-| Morocco      | Marrakech      | terracotta      | <img src="posters/marrakech_terracotta_20260118_143253.png" width="250"> |
-| Singapore    | Singapore      | neon_cyberpunk  | <img src="posters/singapore_neon_cyberpunk_20260118_153328.png" width="250"> |
-| Australia    | Melbourne      | forest          | <img src="posters/melbourne_forest_20260118_153446.png" width="250"> |
-| UAE          | Dubai          | midnight_blue   | <img src="posters/dubai_midnight_blue_20260118_140807.png" width="250"> |
-| USA          | Seattle        | emerald         | <img src="posters/seattle_emerald_20260124_162244.png" width="250"> |
+| USA          | San Francisco  | sunset          | <img src="readme-images/san_francisco_sunset_20260118_144726.png" width="250"> |
+| Spain        | Barcelona      | warm_beige      | <img src="readme-images/barcelona_warm_beige_20260118_140048.png" width="250"> |
+| Italy        | Venice         | blueprint       | <img src="readme-images/venice_blueprint_20260118_140505.png" width="250"> |
+| Japan        | Tokyo          | japanese_ink    | <img src="readme-images/tokyo_japanese_ink_20260118_142446.png" width="250"> |
+| India        | Mumbai         | contrast_zones  | <img src="readme-images/mumbai_contrast_zones_20260118_145843.png" width="250"> |
+| Morocco      | Marrakech      | terracotta      | <img src="readme-images/marrakech_terracotta_20260118_143253.png" width="250"> |
+| Singapore    | Singapore      | neon_cyberpunk  | <img src="readme-images/singapore_neon_cyberpunk_20260118_153328.png" width="250"> |
+| Australia    | Melbourne      | forest          | <img src="readme-images/melbourne_forest_20260118_153446.png" width="250"> |
+| UAE          | Dubai          | midnight_blue   | <img src="readme-images/dubai_midnight_blue_20260118_140807.png" width="250"> |
+| USA          | Seattle        | emerald         | <img src="readme-images/seattle_emerald_20260124_162244.png" width="250"> |
 
 ## Installation
 
@@ -73,7 +73,9 @@ python create_map_poster.py --city <city> --country <country> [options]
 | **OPTIONAL:** `--latitude` | `-lat` | Override latitude center point (use with --longitude) | |
 | **OPTIONAL:** `--longitude` | `-long` | Override longitude center point (use with --latitude) | |
 | **OPTIONAL:** `--country-label` | | Override country text displayed on poster | |
+| **OPTIONAL:** `--coordinates-as-country` | | Show coordinates instead of the country name, using the same font size | off |
 | **OPTIONAL:** `--theme` | `-t` | Theme name | terracotta |
+| **OPTIONAL:** `--no-fade` | | Disable the top and bottom gradient fades | off |
 | **OPTIONAL:** `--distance` | `-d` | Map radius in meters | 18000 |
 | **OPTIONAL:** `--list-themes` | | List all available themes | |
 | **OPTIONAL:** `--all-themes` | | Generate posters for all available themes | |
@@ -87,6 +89,8 @@ python create_map_poster.py --city <city> --country <country> [options]
 | **OPTIONAL:** `--laser-road-hierarchy` | | Road-type width hierarchy in laser mode (motorways thicker) | off |
 | **OPTIONAL:** `--laser-double-lines` | | Parallel double-lines for major roads in laser mode | off |
 | **OPTIONAL:** `--laser-double-line-offset` | | Offset distance in meters for each major-road parallel line | 8.0 |
+| **OPTIONAL:** `--countryside` | | Add all rural layers (forest, farmland, buildings, waterways, ...) | off |
+| **OPTIONAL:** `--layers` | | Comma-separated rural layers: `farmland`, `wetland`, `forest`, `settlement`, `buildings`, `waterways`, `railways`, `power` (or `all`) | |
 
 ### Multilingual Support - i18n
 
@@ -228,6 +232,17 @@ python create_map_poster.py -c "Amsterdam" -C "Netherlands" --theme laser --lase
 | 8000-12000m | Medium cities, focused downtown (Paris, Barcelona) |
 | 15000-20000m | Large metros, full city view (Tokyo, Mumbai) |
 
+### Overpass Server (502 / timeout errors)
+
+If the public Overpass server (`overpass-api.de`) is overloaded and returns `502 Bad Gateway`, run your own Overpass server with Docker (available in the devcontainer after a rebuild). Edit the region in [docker-compose.overpass.yml](docker-compose.overpass.yml). The devcontainer starts the server automatically on every container start; to start it manually:
+
+```bash
+docker compose -f docker-compose.overpass.yml up -d
+docker compose -f docker-compose.overpass.yml logs -f   # wait for the import to finish
+```
+
+The script automatically tries the local server (`http://localhost:12345/api`) first and falls back to the default public server if it is unreachable or fails.
+
 ## Themes
 
 18 themes available in `themes/` directory:
@@ -252,10 +267,22 @@ python create_map_poster.py -c "Amsterdam" -C "Netherlands" --theme laser --lase
 | `copper_patina` | Oxidized copper aesthetic |
 | `monochrome_blue` | Single blue color family |
 | `laser` | Laser-cut focused red line palette |
+| `countryside` | Forests, fields, lakes and farms for rural areas (use with `--countryside`) |
+
+## Countryside Posters
+
+Maps of forest and farmland look empty with only roads, parks and water. `--countryside` (or a chosen subset with `--layers`) adds more OpenStreetMap data, and the `countryside` theme colors it:
+
+```bash
+python create_map_poster.py -c "Keso" -C "Finland" -lat 61.082383 -long 24.645463 -d 2000 -t countryside --countryside
+python create_map_poster.py -c "Keso" -C "Finland" -lat 61.082383 -long 24.645463 -d 2000 -t countryside --layers forest,farmland,buildings
+```
+
+Other themes also work with these options; layers without a theme color fall back to the theme's park, water or road colors. Layers are not drawn in `--laser-cut` mode.
 
 ## Output
 
-Posters are saved to `posters/` directory with format:
+Posters are saved to `posters/{city}/{YYYY-MM-DD}_{N}/`, where `N` is how many times that city has been run on that date (a new subfolder per run, shared by all themes of `--all-themes`). Existing folders named `{N}-{YYYY-MM-DD}` are counted when choosing the next number. Each run folder also contains `command.txt` with the command used to generate it. File format:
 
 ```text
 {city}_{theme}_{YYYYMMDD_HHMMSS}.{png|svg|pdf}
