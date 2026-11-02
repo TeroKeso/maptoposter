@@ -214,18 +214,28 @@ def is_latin_script(text):
     return (latin_count / total_alpha) > 0.8
 
 
-def generate_output_filename(city, theme_name, output_format):
+def create_run_dir(city):
     """
-    Generate unique output filename with city, theme, and datetime.
+    Create posters/<city>/<N> - <YYYY-MM-DD>, where N is this city's run count for today.
     """
-    if not os.path.exists(POSTERS_DIR):
-        os.makedirs(POSTERS_DIR)
+    city_dir = Path(POSTERS_DIR) / city.lower().replace(" ", "_")
+    city_dir.mkdir(parents=True, exist_ok=True)
+    today = datetime.now().strftime("%Y-%m-%d")
+    existing = sum(1 for d in city_dir.glob(f"* - {today}") if d.is_dir())
+    run_dir = city_dir / f"{existing + 1} - {today}"
+    run_dir.mkdir()
+    return run_dir
 
+
+def generate_output_filename(city, theme_name, output_format, run_dir):
+    """
+    Generate unique output filename with city, theme, and datetime inside run_dir.
+    """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     city_slug = city.lower().replace(" ", "_")
     ext = output_format.lower()
     filename = f"{city_slug}_{theme_name}_{timestamp}.{ext}"
-    return os.path.join(POSTERS_DIR, filename)
+    return os.path.join(run_dir, filename)
 
 
 def get_available_themes():
@@ -1085,7 +1095,7 @@ Distance guide:
   15000-20000m Large metros, full city view (Tokyo, Mumbai)
 
 Available themes can be found in the 'themes/' directory.
-Generated posters are saved to 'posters/' directory.
+Generated posters are saved to 'posters/<city>/<run number> - <date>/'.
 """)
 
 
@@ -1332,9 +1342,12 @@ Examples:
         else:
             coords = get_coordinates(args.city, args.country)
 
+        run_dir = create_run_dir(args.city)
+        print(f"✓ Output folder: {run_dir}")
+
         for theme_name in themes_to_generate:
             THEME = load_theme(theme_name)
-            output_file = generate_output_filename(args.city, theme_name, args.format)
+            output_file = generate_output_filename(args.city, theme_name, args.format, run_dir)
             create_poster(
                 args.city,
                 args.country,

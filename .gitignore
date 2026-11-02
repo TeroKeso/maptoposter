@@ -33,13 +33,9 @@ test_venv/
 htmlcov/
 .coverage
 .pytest_cache/
-
-# Runtime logs
 logs/
 
-# Copilot local context
-.copilot.md
-
+# Devcontainer
 devcontainer-lock.json
-
-
+# Generated posters
+posters/
