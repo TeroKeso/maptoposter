@@ -228,6 +228,17 @@ python create_map_poster.py -c "Amsterdam" -C "Netherlands" --theme laser --lase
 | 8000-12000m | Medium cities, focused downtown (Paris, Barcelona) |
 | 15000-20000m | Large metros, full city view (Tokyo, Mumbai) |
 
+### Overpass Server (502 / timeout errors)
+
+If the public Overpass server (`overpass-api.de`) is overloaded and returns `502 Bad Gateway`, run your own Overpass server with Docker (available in the devcontainer after a rebuild). Edit the region in [docker-compose.overpass.yml](docker-compose.overpass.yml). The devcontainer starts the server automatically on every container start; to start it manually:
+
+```bash
+docker compose -f docker-compose.overpass.yml up -d
+docker compose -f docker-compose.overpass.yml logs -f   # wait for the import to finish
+```
+
+The script automatically tries the local server (`http://localhost:12345/api`) first and falls back to the default public server if it is unreachable or fails.
+
 ## Themes
 
 18 themes available in `themes/` directory:

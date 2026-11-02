@@ -1,0 +1,27 @@
+# Local Overpass API server. Change OVERPASS_PLANET_URL to the region you need
+# (extracts: https://download.geofabrik.de/). First start imports the data
+# and can take 10-60 minutes for a country.
+services:
+  overpass:
+    # Overpass API Docker image (project: https://github.com/b1tw153/Overpass-API).
+    # Alternative community image: wiktorn/overpass-api (https://hub.docker.com/r/wiktorn/overpass-api)
+    image: b1tw153/overpass-api
+    ports:
+      # host:container -> API at http://localhost:12345/api
+      - "12345:80"
+    environment:
+      # init: download OVERPASS_PLANET_URL and import it on first start
+      OVERPASS_MODE: init
+      # Geofabrik only provides .osm.pbf for this region; the image imports it directly
+      OVERPASS_PLANET_URL: https://download.geofabrik.de/europe/finland-latest.osm.pbf
+      # no = skip object metadata (smaller database)
+      OVERPASS_META: "no"
+      # rules (area) generation load, 10 = default
+      OVERPASS_RULES_LOAD: 10
+    volumes:
+      # persists the imported database across restarts
+      - overpass_db:/db
+    restart: unless-stopped
+
+volumes:
+  overpass_db:

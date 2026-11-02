@@ -23,6 +23,7 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import osmnx as ox
+import requests
 from geopandas import GeoDataFrame
 from geopy.geocoders import Nominatim
 from lat_lon_parser import parse
@@ -41,6 +42,43 @@ class CacheError(Exception):
 CACHE_DIR_PATH = os.environ.get("CACHE_DIR", "cache")
 CACHE_DIR = Path(CACHE_DIR_PATH)
 CACHE_DIR.mkdir(exist_ok=True)
+
+# Local Overpass server (see docker-compose.overpass.yml) is tried first,
+# then OSMnx's default public server.
+LOCAL_OVERPASS_URL = "http://localhost:12345/api"
+DEFAULT_OVERPASS_URL = ox.settings.overpass_url
+_local_overpass_up: bool | None = None
+
+
+def _local_overpass_available() -> bool:
+    """Check once (short timeout) whether the local Overpass server responds."""
+    global _local_overpass_up
+    if _local_overpass_up is None:
+        try:
+            requests.get(f"{LOCAL_OVERPASS_URL}/status", timeout=3).raise_for_status()
+            _local_overpass_up = True
+            print(f"✓ Using local Overpass server: {LOCAL_OVERPASS_URL}")
+        except requests.RequestException:
+            _local_overpass_up = False
+            print("Local Overpass server not available, using default server")
+    return _local_overpass_up
+
+
+def overpass_fetch(func, *args, **kwargs):
+    """Call an OSMnx fetch function on the local server first, then the default one."""
+    urls = [DEFAULT_OVERPASS_URL]
+    if _local_overpass_available():
+        urls.insert(0, LOCAL_OVERPASS_URL)
+    for i, url in enumerate(urls):
+        ox.settings.overpass_url = url
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            if i == len(urls) - 1:
+                raise
+            print(f"Local Overpass failed ({e}); falling back to default server")
+    return None
+
 
 THEMES_DIR = "themes"
 FONTS_DIR = "fonts"
@@ -523,7 +561,7 @@ def fetch_graph(point, dist) -> MultiDiGraph | None:
         return cast(MultiDiGraph, cached)
 
     try:
-        g = ox.graph_from_point(point, dist=dist, dist_type='bbox', network_type='all', truncate_by_edge=True)
+        g = overpass_fetch(ox.graph_from_point, point, dist=dist, dist_type='bbox', network_type='all', truncate_by_edge=True)
         # Rate limit between requests
         time.sleep(0.5)
         try:
@@ -561,7 +599,7 @@ def fetch_features(point, dist, tags, name) -> GeoDataFrame | None:
         return cast(GeoDataFrame, cached)
 
     try:
-        data = ox.features_from_point(point, tags=tags, dist=dist)
+        data = overpass_fetch(ox.features_from_point, point, tags=tags, dist=dist)
         # Rate limit between requests
         time.sleep(0.3)
         try:
