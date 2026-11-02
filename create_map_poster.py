@@ -216,13 +216,13 @@ def is_latin_script(text):
 
 def create_run_dir(city):
     """
-    Create posters/<city>/<N> - <YYYY-MM-DD>, where N is this city's run count for today.
+    Create posters/<city>/<N>-<YYYY-MM-DD>, where N is this city's run count for today.
     """
     city_dir = Path(POSTERS_DIR) / city.lower().replace(" ", "_")
     city_dir.mkdir(parents=True, exist_ok=True)
     today = datetime.now().strftime("%Y-%m-%d")
-    existing = sum(1 for d in city_dir.glob(f"* - {today}") if d.is_dir())
-    run_dir = city_dir / f"{existing + 1} - {today}"
+    existing = sum(1 for d in city_dir.glob(f"*-{today}") if d.is_dir())
+    run_dir = city_dir / f"{existing + 1}-{today}"
     run_dir.mkdir()
     return run_dir
 
@@ -1095,7 +1095,7 @@ Distance guide:
   15000-20000m Large metros, full city view (Tokyo, Mumbai)
 
 Available themes can be found in the 'themes/' directory.
-Generated posters are saved to 'posters/<city>/<run number> - <date>/'.
+Generated posters are saved to 'posters/<city>/<run number>-<date>/'.
 """)
 
 

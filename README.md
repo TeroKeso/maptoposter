@@ -266,7 +266,7 @@ The script automatically tries the local server (`http://localhost:12345/api`) f
 
 ## Output
 
-Posters are saved to `posters/{city}/{N} - {YYYY-MM-DD}/`, where `N` is how many times that city has been run on that date (a new subfolder per run, shared by all themes of `--all-themes`). File format:
+Posters are saved to `posters/{city}/{N}-{YYYY-MM-DD}/`, where `N` is how many times that city has been run on that date (a new subfolder per run, shared by all themes of `--all-themes`). File format:
 
 ```text
 {city}_{theme}_{YYYYMMDD_HHMMSS}.{png|svg|pdf}
