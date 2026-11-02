@@ -39,3 +39,7 @@ logs/
 
 # Copilot local context
 .copilot.md
+
+devcontainer-lock.json
+
+

@@ -45,32 +45,46 @@ CACHE_DIR.mkdir(exist_ok=True)
 
 # Local Overpass server (see docker-compose.overpass.yml) is tried first,
 # then OSMnx's default public server.
-LOCAL_OVERPASS_URL = "http://localhost:12345/api"
+LOCAL_OVERPASS_URLS = [
+    u for u in (
+        os.environ.get("LOCAL_OVERPASS_URL"),
+        "http://localhost:12345/api",
+        # Reachable from a devcontainer when Docker runs on the host
+        "http://host.docker.internal:12345/api",
+    ) if u
+]
+LOCAL_OVERPASS_URL: str | None = None
 DEFAULT_OVERPASS_URL = ox.settings.overpass_url
-_local_overpass_up: bool | None = None
+_local_overpass_checked = False
 
 
 def _local_overpass_available() -> bool:
-    """Check once (short timeout) whether the local Overpass server responds."""
-    global _local_overpass_up
-    if _local_overpass_up is None:
-        try:
-            requests.get(f"{LOCAL_OVERPASS_URL}/status", timeout=3).raise_for_status()
-            _local_overpass_up = True
-            print(f"✓ Using local Overpass server: {LOCAL_OVERPASS_URL}")
-        except requests.RequestException:
-            _local_overpass_up = False
+    """Check once (short timeout) which local Overpass server, if any, responds."""
+    global LOCAL_OVERPASS_URL, _local_overpass_checked
+    if not _local_overpass_checked:
+        _local_overpass_checked = True
+        for url in LOCAL_OVERPASS_URLS:
+            try:
+                requests.get(f"{url}/status", timeout=3).raise_for_status()
+                LOCAL_OVERPASS_URL = url
+                print(f"✓ Using local Overpass server: {url}")
+                break
+            except requests.RequestException:
+                continue
+        else:
             print("Local Overpass server not available, using default server")
-    return _local_overpass_up
+    return LOCAL_OVERPASS_URL is not None
 
 
 def overpass_fetch(func, *args, **kwargs):
     """Call an OSMnx fetch function on the local server first, then the default one."""
     urls = [DEFAULT_OVERPASS_URL]
     if _local_overpass_available():
-        urls.insert(0, LOCAL_OVERPASS_URL)
+        urls.insert(0, cast(str, LOCAL_OVERPASS_URL))
     for i, url in enumerate(urls):
         ox.settings.overpass_url = url
+        # A local server reports "Rate limit: 0" (unlimited), which OSMnx's status parser misreads as busy
+        ox.settings.overpass_rate_limit = url != LOCAL_OVERPASS_URL
         try:
             return func(*args, **kwargs)
         except Exception as e:
