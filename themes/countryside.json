@@ -1,0 +1,23 @@
+{
+  "name": "Countryside",
+  "description": "Forests, fields, lakes and farms - made for rural areas (use with --countryside)",
+  "bg": "#F3EFE2",
+  "text": "#3B4A33",
+  "gradient_color": "#F3EFE2",
+  "water": "#9CC3D5",
+  "parks": "#C9DDB0",
+  "forest": "#B5CFA0",
+  "farmland": "#EBE3B8",
+  "wetland": "#CFDDCB",
+  "settlement": "#E4D3C6",
+  "buildings": "#B7776A",
+  "waterway": "#7FB0C9",
+  "railway": "#5E5A55",
+  "power": "#B9B2A3",
+  "road_motorway": "#5E4430",
+  "road_primary": "#6F5238",
+  "road_secondary": "#80634A",
+  "road_tertiary": "#8F7157",
+  "road_residential": "#9C8267",
+  "road_default": "#8A7860"
+}

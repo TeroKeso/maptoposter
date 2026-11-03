@@ -73,7 +73,9 @@ python create_map_poster.py --city <city> --country <country> [options]
 | **OPTIONAL:** `--latitude` | `-lat` | Override latitude center point (use with --longitude) | |
 | **OPTIONAL:** `--longitude` | `-long` | Override longitude center point (use with --latitude) | |
 | **OPTIONAL:** `--country-label` | | Override country text displayed on poster | |
+| **OPTIONAL:** `--coordinates-as-country` | | Show coordinates instead of the country name, using the same font size | off |
 | **OPTIONAL:** `--theme` | `-t` | Theme name | terracotta |
+| **OPTIONAL:** `--no-fade` | | Disable the top and bottom gradient fades | off |
 | **OPTIONAL:** `--distance` | `-d` | Map radius in meters | 18000 |
 | **OPTIONAL:** `--list-themes` | | List all available themes | |
 | **OPTIONAL:** `--all-themes` | | Generate posters for all available themes | |
@@ -87,6 +89,8 @@ python create_map_poster.py --city <city> --country <country> [options]
 | **OPTIONAL:** `--laser-road-hierarchy` | | Road-type width hierarchy in laser mode (motorways thicker) | off |
 | **OPTIONAL:** `--laser-double-lines` | | Parallel double-lines for major roads in laser mode | off |
 | **OPTIONAL:** `--laser-double-line-offset` | | Offset distance in meters for each major-road parallel line | 8.0 |
+| **OPTIONAL:** `--countryside` | | Add all rural layers (forest, farmland, buildings, waterways, ...) | off |
+| **OPTIONAL:** `--layers` | | Comma-separated rural layers: `farmland`, `wetland`, `forest`, `settlement`, `buildings`, `waterways`, `railways`, `power` (or `all`) | |
 
 ### Multilingual Support - i18n
 
@@ -263,10 +267,22 @@ The script automatically tries the local server (`http://localhost:12345/api`) f
 | `copper_patina` | Oxidized copper aesthetic |
 | `monochrome_blue` | Single blue color family |
 | `laser` | Laser-cut focused red line palette |
+| `countryside` | Forests, fields, lakes and farms for rural areas (use with `--countryside`) |
+
+## Countryside Posters
+
+Maps of forest and farmland look empty with only roads, parks and water. `--countryside` (or a chosen subset with `--layers`) adds more OpenStreetMap data, and the `countryside` theme colors it:
+
+```bash
+python create_map_poster.py -c "Keso" -C "Finland" -lat 61.082383 -long 24.645463 -d 2000 -t countryside --countryside
+python create_map_poster.py -c "Keso" -C "Finland" -lat 61.082383 -long 24.645463 -d 2000 -t countryside --layers forest,farmland,buildings
+```
+
+Other themes also work with these options; layers without a theme color fall back to the theme's park, water or road colors. Layers are not drawn in `--laser-cut` mode.
 
 ## Output
 
-Posters are saved to `posters/{city}/{N}-{YYYY-MM-DD}/`, where `N` is how many times that city has been run on that date (a new subfolder per run, shared by all themes of `--all-themes`). File format:
+Posters are saved to `posters/{city}/{YYYY-MM-DD}_{N}/`, where `N` is how many times that city has been run on that date (a new subfolder per run, shared by all themes of `--all-themes`). Existing folders named `{N}-{YYYY-MM-DD}` are counted when choosing the next number. Each run folder also contains `command.txt` with the command used to generate it. File format:
 
 ```text
 {city}_{theme}_{YYYYMMDD_HHMMSS}.{png|svg|pdf}

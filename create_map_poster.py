@@ -56,6 +56,7 @@ LOCAL_OVERPASS_URLS = [
 LOCAL_OVERPASS_URL: str | None = None
 DEFAULT_OVERPASS_URL = ox.settings.overpass_url
 _local_overpass_checked = False
+_local_has_data = False
 
 
 def _local_overpass_available() -> bool:
@@ -76,19 +77,47 @@ def _local_overpass_available() -> bool:
     return LOCAL_OVERPASS_URL is not None
 
 
+def _local_covers(point) -> bool:
+    """Check whether the local server has any OSM nodes around the point."""
+    global _local_has_data
+    lat, lon = point
+    try:
+        r = requests.post(
+            f"{LOCAL_OVERPASS_URL}/interpreter",
+            data={"data": f"[out:json][timeout:20];node(around:2000,{lat},{lon});out count;"},
+            timeout=30,
+        )
+        covered = int(r.json()["elements"][0]["tags"]["total"]) > 0
+        _local_has_data = _local_has_data or covered
+        return covered
+    except (requests.RequestException, ValueError, KeyError, IndexError):
+        return False
+
+
 def overpass_fetch(func, *args, **kwargs):
     """Call an OSMnx fetch function on the local server first, then the default one."""
     urls = [DEFAULT_OVERPASS_URL]
     if _local_overpass_available():
         urls.insert(0, cast(str, LOCAL_OVERPASS_URL))
+    global _local_has_data
     for i, url in enumerate(urls):
         ox.settings.overpass_url = url
         # A local server reports "Rate limit: 0" (unlimited), which OSMnx's status parser misreads as busy
         ox.settings.overpass_rate_limit = url != LOCAL_OVERPASS_URL
         try:
-            return func(*args, **kwargs)
+            result = func(*args, **kwargs)
+            if url == LOCAL_OVERPASS_URL:
+                _local_has_data = True
+            return result
         except Exception as e:
             if i == len(urls) - 1:
+                raise
+            # The local server covers this area, so an empty answer is genuine
+            if (
+                url == LOCAL_OVERPASS_URL
+                and isinstance(e, ox._errors.InsufficientResponseError)
+                and (_local_has_data or _local_covers(args[0]))
+            ):
                 raise
             print(f"Local Overpass failed ({e}); falling back to default server")
     return None
@@ -216,13 +245,25 @@ def is_latin_script(text):
 
 def create_run_dir(city):
     """
-    Create posters/<city>/<N>-<YYYY-MM-DD>, where N is this city's run count for today.
+    Create posters/<city>/<YYYY-MM-DD>_<N>, where N is this city's run count for today.
     """
     city_dir = Path(POSTERS_DIR) / city.lower().replace(" ", "_")
     city_dir.mkdir(parents=True, exist_ok=True)
     today = datetime.now().strftime("%Y-%m-%d")
-    existing = sum(1 for d in city_dir.glob(f"*-{today}") if d.is_dir())
-    run_dir = city_dir / f"{existing + 1}-{today}"
+    numbers = []
+    for existing_dir in city_dir.iterdir():
+        if not existing_dir.is_dir():
+            continue
+        if existing_dir.name.startswith(f"{today}_"):
+            number = existing_dir.name[len(today) + 1:]
+        elif existing_dir.name.endswith(f"-{today}"):
+            number = existing_dir.name[:-(len(today) + 1)]
+        else:
+            continue
+        if number.isdigit():
+            numbers.append(int(number))
+
+    run_dir = city_dir / f"{today}_{max(numbers, default=0) + 1}"
     run_dir.mkdir()
     return run_dir
 
@@ -636,6 +677,64 @@ def fetch_features(point, dist, tags, name) -> GeoDataFrame | None:
         return None
 
 
+# Extra OSM layers that make rural areas (forest, farmland, ...) less empty.
+# color: theme key, fallback: theme key used when the theme lacks `color`.
+RURAL_LAYERS = {
+    "farmland": {"tags": {"landuse": ["farmland", "meadow", "orchard", "vineyard", "farmyard"]},
+                 "kind": "area", "color": "farmland", "fallback": "parks", "zorder": 0.10},
+    "wetland": {"tags": {"natural": ["wetland", "scrub", "heath", "grassland"]},
+                "kind": "area", "color": "wetland", "fallback": "parks", "zorder": 0.20},
+    "forest": {"tags": {"landuse": "forest", "natural": "wood"},
+               "kind": "area", "color": "forest", "fallback": "parks", "zorder": 0.30},
+    "settlement": {"tags": {"landuse": ["residential", "industrial", "cemetery", "quarry"]},
+                   "kind": "area", "color": "settlement", "fallback": "road_residential", "zorder": 0.40},
+    "buildings": {"tags": {"building": True},
+                  "kind": "area", "color": "buildings", "fallback": "road_tertiary", "zorder": 1.5},
+    "waterways": {"tags": {"waterway": ["river", "stream", "canal", "ditch", "drain"]},
+                  "kind": "line", "color": "waterway", "fallback": "water", "zorder": 0.9, "width": 0.9},
+    "railways": {"tags": {"railway": ["rail", "narrow_gauge", "light_rail"]},
+                 "kind": "line", "color": "railway", "fallback": "road_primary", "zorder": 1.8, "width": 0.7},
+    "power": {"tags": {"power": "line"},
+              "kind": "line", "color": "power", "fallback": "road_default", "zorder": 1.2, "width": 0.4},
+}
+
+
+def parse_layers(value):
+    """Turn 'forest,farmland' (or 'all') into a validated list of layer names."""
+    names = [n.strip().lower() for n in value.split(",") if n.strip()]
+    if names == ["all"]:
+        return list(RURAL_LAYERS)
+    unknown = [n for n in names if n not in RURAL_LAYERS]
+    if unknown:
+        raise ValueError(f"Unknown layer(s): {', '.join(unknown)}. Available: {', '.join(RURAL_LAYERS)}")
+    return names
+
+
+def plot_rural_layers(ax, g_proj, point, dist, layers):
+    """Fetch and draw the selected rural layers below the road network."""
+    geom_types = {
+        "area": ["Polygon", "MultiPolygon"],
+        "line": ["LineString", "MultiLineString"],
+    }
+    for name in tqdm(layers, desc="Downloading rural layers", unit="layer"):
+        spec = RURAL_LAYERS[name]
+        data = fetch_features(point, dist, spec["tags"], name)
+        if data is None or data.empty:
+            continue
+        data = data[data.geometry.type.isin(geom_types[spec["kind"]])]
+        if data.empty:
+            continue
+        try:
+            data = ox.projection.project_gdf(data)
+        except Exception:
+            data = data.to_crs(g_proj.graph["crs"])
+        color = THEME.get(spec["color"], THEME[spec["fallback"]])
+        if spec["kind"] == "area":
+            data.plot(ax=ax, facecolor=color, edgecolor="none", zorder=spec["zorder"])
+        else:
+            data.plot(ax=ax, color=color, linewidth=spec["width"], zorder=spec["zorder"])
+
+
 def create_poster(
     city,
     country,
@@ -657,6 +756,9 @@ def create_poster(
     laser_road_hierarchy=False,
     laser_double_lines=False,
     laser_double_line_offset=8.0,
+    rural_layers=None,
+    show_fade=True,
+    coordinates_as_country=False,
 ):
     """
     Generate a complete map poster with roads, water, parks, and typography.
@@ -675,6 +777,8 @@ def create_poster(
         height: Poster height in inches (default: 16)
         country_label: Optional override for country text on poster
         _name_label: Optional override for city name (unused, reserved for future use)
+        show_fade: Whether to draw the top and bottom gradient fades
+        coordinates_as_country: Replace the country label with the map coordinates
 
     Raises:
         RuntimeError: If street network data cannot be retrieved
@@ -771,6 +875,9 @@ def create_poster(
             except Exception:
                 parks_polys = parks_polys.to_crs(g_proj.graph['crs'])
             parks_polys.plot(ax=ax, facecolor=THEME['parks'], edgecolor='none', zorder=0.8)
+    if rural_layers and not laser_cut:
+        plot_rural_layers(ax, g_proj, point, compensated_dist, rural_layers)
+
     # Layer 2: Roads with hierarchy coloring
     print("Applying road hierarchy colors...")
     if laser_cut:
@@ -861,7 +968,7 @@ def create_poster(
     ax.set_ylim(crop_ylim)
 
     # Layer 3: Gradients (Top and Bottom)
-    if not laser_cut:
+    if not laser_cut and show_fade:
         create_gradient_fade(ax, THEME['gradient_color'], location='bottom', zorder=10)
         create_gradient_fade(ax, THEME['gradient_color'], location='top', zorder=10)
 
@@ -943,10 +1050,15 @@ def create_poster(
             zorder=11,
         )
 
+        lat, lon = point
+        coords = (
+            f"{abs(lat):.4f}° {'N' if lat >= 0 else 'S'} / "
+            f"{abs(lon):.4f}° {'E' if lon >= 0 else 'W'}"
+        )
         ax.text(
             0.5,
             0.10,
-            display_country.upper(),
+            coords if coordinates_as_country else display_country.upper(),
             transform=ax.transAxes,
             color=THEME["text"],
             ha="center",
@@ -954,26 +1066,18 @@ def create_poster(
             zorder=11,
         )
 
-        lat, lon = point
-        coords = (
-            f"{lat:.4f}° N / {lon:.4f}° E"
-            if lat >= 0
-            else f"{abs(lat):.4f}° S / {lon:.4f}° E"
-        )
-        if lon < 0:
-            coords = coords.replace("E", "W")
-
-        ax.text(
-            0.5,
-            0.07,
-            coords,
-            transform=ax.transAxes,
-            color=THEME["text"],
-            alpha=0.7,
-            ha="center",
-            fontproperties=font_coords,
-            zorder=11,
-        )
+        if not coordinates_as_country:
+            ax.text(
+                0.5,
+                0.07,
+                coords,
+                transform=ax.transAxes,
+                color=THEME["text"],
+                alpha=0.7,
+                ha="center",
+                fontproperties=font_coords,
+                zorder=11,
+            )
 
         ax.plot(
             [0.4, 0.6],
@@ -1076,6 +1180,7 @@ Options:
   --city, -c        City name (required)
   --country, -C     Country name (required)
   --country-label   Override country text displayed on poster
+  --coordinates-as-country  Show coordinates instead of country at the same font size
   --theme, -t       Theme name (default: terracotta)
   --all-themes      Generate posters for all themes
   --distance, -d    Map radius in meters (default: 18000)
@@ -1095,7 +1200,7 @@ Distance guide:
   15000-20000m Large metros, full city view (Tokyo, Mumbai)
 
 Available themes can be found in the 'themes/' directory.
-Generated posters are saved to 'posters/<city>/<run number>-<date>/'.
+Generated posters are saved to 'posters/<city>/<date>_<run number>/' together with command.txt.
 """)
 
 
@@ -1162,11 +1267,23 @@ Examples:
         help="Override country text displayed on poster",
     )
     parser.add_argument(
+        "--coordinates-as-country",
+        action="store_true",
+        help="Show coordinates instead of the country label at the same font size",
+    )
+    parser.add_argument(
         "--theme",
         "-t",
         type=str,
         default="terracotta",
         help="Theme name (default: terracotta)",
+    )
+    parser.add_argument(
+        "--no-fade",
+        dest="show_fade",
+        action="store_false",
+        default=True,
+        help="Disable the top and bottom gradient fades",
     )
     parser.add_argument(
         "--all-themes",
@@ -1222,6 +1339,16 @@ Examples:
         default="png",
         choices=["png", "svg", "pdf"],
         help="Output format for the poster (default: png)",
+    )
+    parser.add_argument(
+        "--layers",
+        type=str,
+        help=f"Extra rural OSM layers, comma separated, or 'all' ({', '.join(RURAL_LAYERS)})",
+    )
+    parser.add_argument(
+        "--countryside",
+        action="store_true",
+        help="Shortcut for --layers all (forest, farmland, buildings, waterways, ... for rural areas)",
     )
     parser.add_argument(
         "--laser-cut",
@@ -1342,8 +1469,16 @@ Examples:
         else:
             coords = get_coordinates(args.city, args.country)
 
+        rural_layers = parse_layers("all" if args.countryside and not args.layers else args.layers or "")
+
         run_dir = create_run_dir(args.city)
         print(f"✓ Output folder: {run_dir}")
+        try:
+            (run_dir / "command.txt").write_text(
+                f"python {cli_command}\n", encoding=FILE_ENCODING
+            )
+        except OSError as e:
+            print(f"⚠ Could not write command.txt: {e}")
 
         for theme_name in themes_to_generate:
             THEME = load_theme(theme_name)
@@ -1368,6 +1503,9 @@ Examples:
                 laser_road_hierarchy=args.laser_road_hierarchy,
                 laser_double_lines=args.laser_double_lines,
                 laser_double_line_offset=args.laser_double_line_offset,
+                rural_layers=rural_layers,
+                show_fade=args.show_fade,
+                coordinates_as_country=args.coordinates_as_country,
             )
             log_generation_command(cli_command, output_file)
 
