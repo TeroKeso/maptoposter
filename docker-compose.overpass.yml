@@ -11,8 +11,5 @@ services:
       OVERPASS_META_MODE: "no"
       OVERPASS_AREAS: "yes"
     volumes:
-      - overpass_db:/opt/overpass/db
+      - ./overpass_db:/opt/overpass/db
     restart: unless-stopped
-
-volumes:
-  overpass_db:

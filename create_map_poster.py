@@ -759,6 +759,7 @@ def create_poster(
     rural_layers=None,
     show_fade=True,
     coordinates_as_country=False,
+    show_attribution=True,
 ):
     """
     Generate a complete map poster with roads, water, parks, and typography.
@@ -779,6 +780,7 @@ def create_poster(
         _name_label: Optional override for city name (unused, reserved for future use)
         show_fade: Whether to draw the top and bottom gradient fades
         coordinates_as_country: Replace the country label with the map coordinates
+        show_attribution: Whether to draw the OpenStreetMap attribution label
 
     Raises:
         RuntimeError: If street network data cannot be retrieved
@@ -1088,24 +1090,25 @@ def create_poster(
             zorder=11,
         )
 
-        # --- ATTRIBUTION (bottom right) ---
-        if FONTS:
-            font_attr = FontProperties(fname=FONTS["light"], size=8)
-        else:
-            font_attr = FontProperties(family="monospace", size=8)
+        if show_attribution:
+            # --- ATTRIBUTION (bottom right) ---
+            if FONTS:
+                font_attr = FontProperties(fname=FONTS["light"], size=8)
+            else:
+                font_attr = FontProperties(family="monospace", size=8)
 
-        ax.text(
-            0.98,
-            0.02,
-            "© OpenStreetMap contributors",
-            transform=ax.transAxes,
-            color=THEME["text"],
-            alpha=0.5,
-            ha="right",
-            va="bottom",
-            fontproperties=font_attr,
-            zorder=11,
-        )
+            ax.text(
+                0.98,
+                0.02,
+                "© OpenStreetMap contributors",
+                transform=ax.transAxes,
+                color=THEME["text"],
+                alpha=0.5,
+                ha="right",
+                va="bottom",
+                fontproperties=font_attr,
+                zorder=11,
+            )
 
     # 5. Save
     print(f"Saving to {output_file}...")
@@ -1270,6 +1273,13 @@ Examples:
         "--coordinates-as-country",
         action="store_true",
         help="Show coordinates instead of the country label at the same font size",
+    )
+    parser.add_argument(
+        "--no-attribution",
+        dest="show_attribution",
+        action="store_false",
+        default=True,
+        help="Do not add the OpenStreetMap contributors label",
     )
     parser.add_argument(
         "--theme",
@@ -1506,6 +1516,7 @@ Examples:
                 rural_layers=rural_layers,
                 show_fade=args.show_fade,
                 coordinates_as_country=args.coordinates_as_country,
+                show_attribution=args.show_attribution,
             )
             log_generation_command(cli_command, output_file)
 

@@ -39,3 +39,6 @@ logs/
 devcontainer-lock.json
 # Generated posters
 posters/
+
+# Local Overpass database
+overpass_db/*
