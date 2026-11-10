@@ -6,7 +6,7 @@
   "remoteUser": "vscode",
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
   "postCreateCommand": "python -m pip install --upgrade pip && python -m pip install -r requirements.txt",
-  "postStartCommand": "nohup bash .devcontainer/start-overpass.sh > /tmp/overpass-start.log 2>&1 &",
+  "postStartCommand": "bash .devcontainer/start-overpass.sh",
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:4.1.3": {}
   },

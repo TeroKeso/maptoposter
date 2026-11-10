@@ -24,4 +24,6 @@ if [ ! -f "$DB_DIR/replicate_id" ]; then
         --meta=no || { echo "Overpass import failed"; exit 1; }
 fi
 
-$COMPOSE up -d || echo "Could not start local Overpass server"
+echo "Starting local Overpass server..."
+$COMPOSE up -d || { echo "Could not start local Overpass server" >&2; exit 1; }
+echo "Local Overpass server started."
