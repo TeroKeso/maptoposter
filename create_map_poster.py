@@ -697,6 +697,7 @@ RURAL_LAYERS = {
     "power": {"tags": {"power": "line"},
               "kind": "line", "color": "power", "fallback": "road_default", "zorder": 1.2, "width": 0.4},
 }
+COUNTRYSIDE_DEFAULT_LAYERS = ("farmland", "forest", "buildings", "waterways")
 
 
 def parse_layers(value):
@@ -742,8 +743,8 @@ def create_poster(
     dist,
     output_file,
     output_format,
-    width=12,
-    height=16,
+    width=8.2677,
+    height=11.6929,
     country_label=None,
     name_label=None,
     display_city=None,
@@ -774,8 +775,8 @@ def create_poster(
         dist: Map radius in meters
         output_file: Path where poster will be saved
         output_format: File format ('png', 'svg', or 'pdf')
-        width: Poster width in inches (default: 12)
-        height: Poster height in inches (default: 16)
+        width: Poster width in inches (default: 8.2677, A4)
+        height: Poster height in inches (default: 11.6929, A4)
         country_label: Optional override for country text on poster
         _name_label: Optional override for city name (unused, reserved for future use)
         show_fade: Whether to draw the top and bottom gradient fades
@@ -1116,8 +1117,8 @@ def create_poster(
     fmt = output_format.lower()
     save_kwargs = dict(
         facecolor=THEME["bg"] if not laser_cut else "none",
-        bbox_inches="tight",
-        pad_inches=0.05 if not laser_cut else 0,
+        bbox_inches=None,
+        pad_inches=0,
     )
 
     if laser_cut:
@@ -1313,15 +1314,15 @@ Examples:
         "--width",
         "-W",
         type=float,
-        default=12,
-        help="Image width in inches (default: 12, max: 20 )",
+        default=8.2677,
+        help="Image width in inches (default: 8.2677, A4, max: 20)",
     )
     parser.add_argument(
         "--height",
         "-H",
         type=float,
-        default=16,
-        help="Image height in inches (default: 16, max: 20)",
+        default=11.6929,
+        help="Image height in inches (default: 11.6929, A4, max: 20)",
     )
     parser.add_argument(
         "--list-themes", action="store_true", help="List all available themes"
@@ -1353,7 +1354,10 @@ Examples:
     parser.add_argument(
         "--layers",
         type=str,
-        help=f"Extra rural OSM layers, comma separated, or 'all' ({', '.join(RURAL_LAYERS)})",
+        help=(
+            f"Extra rural OSM layers, comma separated, or 'all' ({', '.join(RURAL_LAYERS)}); "
+            "defaults to farmland, forest, buildings and waterways with the countryside theme"
+        ),
     )
     parser.add_argument(
         "--countryside",
@@ -1479,8 +1483,6 @@ Examples:
         else:
             coords = get_coordinates(args.city, args.country)
 
-        rural_layers = parse_layers("all" if args.countryside and not args.layers else args.layers or "")
-
         run_dir = create_run_dir(args.city)
         print(f"✓ Output folder: {run_dir}")
         try:
@@ -1491,6 +1493,15 @@ Examples:
             print(f"⚠ Could not write command.txt: {e}")
 
         for theme_name in themes_to_generate:
+            if args.layers:
+                rural_layers = parse_layers(args.layers)
+            elif args.countryside:
+                rural_layers = parse_layers("all")
+            elif theme_name == "countryside":
+                rural_layers = list(COUNTRYSIDE_DEFAULT_LAYERS)
+            else:
+                rural_layers = []
+
             THEME = load_theme(theme_name)
             output_file = generate_output_filename(args.city, theme_name, args.format, run_dir)
             create_poster(

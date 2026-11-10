@@ -79,8 +79,8 @@ python create_map_poster.py --city <city> --country <country> [options]
 | **OPTIONAL:** `--distance` | `-d` | Map radius in meters | 18000 |
 | **OPTIONAL:** `--list-themes` | | List all available themes | |
 | **OPTIONAL:** `--all-themes` | | Generate posters for all available themes | |
-| **OPTIONAL:** `--width` | `-W` | Image width in inches | 12 (max: 20) |
-| **OPTIONAL:** `--height` | `-H` | Image height in inches | 16 (max: 20) |
+| **OPTIONAL:** `--width` | `-W` | Image width in inches | 8.2677 (A4; max: 20) |
+| **OPTIONAL:** `--height` | `-H` | Image height in inches | 11.6929 (A4; max: 20) |
 | **OPTIONAL:** `--format` | `-f` | Output format (`png`, `svg`, `pdf`) | png |
 | **OPTIONAL:** `--laser-cut` | | Laser-cut mode (single stroke, no fills/gradients/text) | off |
 | **OPTIONAL:** `--laser-color` | | Stroke color for laser paths | `#FF0000` |
@@ -267,15 +267,15 @@ The script automatically tries the local server (`http://localhost:12345/api`) f
 | `copper_patina` | Oxidized copper aesthetic |
 | `monochrome_blue` | Single blue color family |
 | `laser` | Laser-cut focused red line palette |
-| `countryside` | Forests, fields, lakes and farms for rural areas (use with `--countryside`) |
+| `countryside` | Forests, fields, lakes and farms; includes farmland, forest, buildings and waterways by default |
 
 ## Countryside Posters
 
-Maps of forest and farmland look empty with only roads, parks and water. `--countryside` (or a chosen subset with `--layers`) adds more OpenStreetMap data, and the `countryside` theme colors it:
+Maps of forest and farmland look empty with only roads, parks and water. The `countryside` theme automatically includes the `farmland`, `forest`, `buildings` and `waterways` layers. Use `--layers` to choose a different subset, or `--countryside` to include every rural layer:
 
 ```bash
-python create_map_poster.py -c "Keso" -C "Finland" -lat 61.082383 -long 24.645463 -d 2000 -t countryside --countryside
-python create_map_poster.py -c "Keso" -C "Finland" -lat 61.082383 -long 24.645463 -d 2000 -t countryside --layers forest,farmland,buildings
+python create_map_poster.py -c "Eteläinen" -C "Finland" -lat 61.070400 -long 24.679000 -d 2000 -t countryside
+python create_map_poster.py -c "Eteläinen" -C "Finland" -lat 61.070400 -long 24.679000 -d 2000 -t countryside --layers forest,farmland,buildings
 ```
 
 Other themes also work with these options; layers without a theme color fall back to the theme's park, water or road colors. Layers are not drawn in `--laser-cut` mode.

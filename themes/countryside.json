@@ -1,8 +1,8 @@
 {
   "name": "Countryside",
-  "description": "Forests, fields, lakes and farms - made for rural areas (use with --countryside)",
+  "description": "Forests, fields, lakes and farms - includes farmland, forest, buildings and waterways by default",
   "bg": "#F3EFE2",
-  "text": "#3B4A33",
+  "text": "#171d14",
   "gradient_color": "#F3EFE2",
   "water": "#9CC3D5",
   "parks": "#C9DDB0",
